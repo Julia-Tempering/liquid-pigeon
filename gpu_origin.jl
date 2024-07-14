@@ -34,11 +34,13 @@ end
 
 
 function (log_potential::CtDNALogPotential)(params)
-    rho = CuArray(params)  
-    if any(rho .< 0 .|| rho .> 1) || abs(sum(rho) - 1) > 1e-5
-        return -Inf
+  
+    if any(x -> x < 0 || x > 1, params) || abs(sum(params)  - 1) > 1e-5
+        # if any(x -> x < 0 || x > 1, rho) || sum(rho) != 1
+            return -Inf  #ensure rho is valid
     end
 
+    rho = CuArray(params)
     total_sum = log_potential.clone_cn_profiles * rho
     mean_total_sum = mean(CUDA.reduce(+, total_sum) / length(total_sum))
 
@@ -48,7 +50,11 @@ function (log_potential::CtDNALogPotential)(params)
     scaled_mu = mu * log_potential.scale
     log_likelihoods = log_t_pdf((log_potential.ctdna .- scaled_mu) / log_potential.scale, degrees_of_freedom)
     log_likelihood = CUDA.reduce(+, log_likelihoods)
-    
+
+    x = log_potential.ctdna[1:5]
+    println("params:$params")
+    println("GLOBAL_CTDNA:$x")
+    println("log_potentia:$log_likelihood")
     return log_likelihood
 end
 
@@ -79,8 +85,9 @@ function load_data(ctdna_path, clones_path)
 end
 
 function default_reference(log_potential::CtDNALogPotential)
-    neutral_ctdna = ones(log_potential.n)
-    return CtDNALogPotential(CuArray(neutral_ctdna), log_potential.clone_cn_profiles, log_potential.num_clones, log_potential.n, log_potential.scale)
+    neutral_ctdna = randn(log_potential.n)
+    neutral_cn_profiles = abs.(randn(size(log_potential.clone_cn_profiles)))
+    return CtDNALogPotential(CuArray(neutral_ctdna), CuArray(neutral_cn_profiles), log_potential.num_clones, log_potential.n, log_potential.scale)
 end
 
 # function main()
@@ -130,9 +137,9 @@ function main(ctdna_paths, clones_paths)
                 target = log_potential,
                 reference = reference_potential,
                 record = [traces; record_default()],
-                n_rounds = 4
+                n_rounds = 1
             )
-            #report(pt)
+            # report(pt)
         end
 
         push!(times, time_taken)
@@ -142,6 +149,6 @@ function main(ctdna_paths, clones_paths)
     return times
 end
 
-ctdna_paths = ["data/ctdna.tsv"]
-clones_paths = ["data/2-clones-simple.tsv"]
+ctdna_paths = ["data/ctdna-5000.tsv"]
+clones_paths = ["data/2-clones-5000.tsv"]
 times = main(ctdna_paths, clones_paths)

@@ -7,6 +7,7 @@ using CSV
 using DataFrames
 using InferenceReport
 using SpecialFunctions
+using Dates
 
 CUDA.allowscalar(false)  
 
@@ -40,9 +41,12 @@ end
 
 
 function (log_potential::CtDNALogPotential)(params)
+    # start_time = time_ns()
     if any(x -> x < 0 || x > 1, params) || abs(sum(params)  - 1) > 1e-5
             return -Inf  #ensure rho is valid
     end
+    # elapsed_time = (time_ns()-start_time)/1e9
+    # println("params:$params ,elapsed_time:$elapsed_time")
 
     copyto!(GLOBAL_RHO, Float32.(params)) 
     total_sum = log_potential.clone_cn_profiles * GLOBAL_RHO
@@ -58,7 +62,7 @@ end
 
 
 function Pigeons.initialization(log_potential::CtDNALogPotential, rng::AbstractRNG, ::Int)
-    Random.seed!(1234)
+    #Random.seed!(1234)
     alpha = 1.0  
     rho = rand(rng, Dirichlet(log_potential.num_clones, alpha))  
     return rho  # cannot convert to cuarray
@@ -74,10 +78,9 @@ function Pigeons.sample_iid!(log_potential::CtDNALogPotential, replica, shared)
 end
 
 function default_reference(log_potential::CtDNALogPotential)
-    Random.seed!(1234)
-    neutral_ctdna = randn(log_potential.n)
-    neutral_cn_profiles = abs.(randn(size(log_potential.clone_cn_profiles)))
-    return CtDNALogPotential(neutral_ctdna,neutral_cn_profiles,log_potential.num_clones, log_potential.n, 1)
+    neutral_ctdna = ones(Float32, log_potential.n) * mean(log_potential.ctdna)
+    neutral_cn_profiles = ones(size(log_potential.clone_cn_profiles))
+    return CtDNALogPotential(neutral_ctdna, neutral_cn_profiles, log_potential.num_clones, log_potential.n, log_potential.scale)
 end
 
 function main(ctdna_paths, clones_paths)
@@ -98,7 +101,8 @@ function main(ctdna_paths, clones_paths)
             pt = pigeons(
                 target = log_potential,
                 reference = reference_potential,
-                record = [traces; record_default()]
+                record = [traces; record_default()],
+                n_rounds = 10
             )
             #report(pt)
         end
@@ -110,8 +114,8 @@ end
 
 # ctdna_paths = ["data/ctdna-10000.tsv","data/ctdna-10000.tsv","data/ctdna-10000.tsv","data/ctdna-10000.tsv"]
 # clones_paths = ["data/3-clones-10000.tsv","data/4-clones-10000.tsv","data/5-clones-10000.tsv","data/6-clones-10000.tsv"]
-ctdna_paths = ["data/ctdna.tsv"]
-clones_paths = ["data/2-clones-simple.tsv"]
+ctdna_paths = ["data/ctdna-1000.tsv"]
+clones_paths = ["data/3-clones-1000-similar.tsv"]
 
 
 times = main(ctdna_paths, clones_paths)
